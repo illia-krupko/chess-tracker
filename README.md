@@ -15,7 +15,7 @@ The system is being developed incrementally. The current codebase already contai
 | AnalysisService | https://github.com/Krupkolllia/chess-tracker-analysis-service | Asynchronous chess analysis pipeline | In progress / planned capabilities |
 | StatisticsService | https://github.com/Krupkolllia/chess-tracker-statistics-service | Player statistics and derived profile data | In progress / planned capabilities |
 | Infrastructure | https://github.com/Krupkolllia/ChessTrackerInfrastructure | PostgreSQL and Kafka local infrastructure | Active |
-| API Gateway | — | Public entry point, JWT validation and request routing | Planned |
+| API Gateway | https://github.com/Krupkolllia/chess-tracker-api-gateway | Public entry point, JWT validation and request routing | Planned |
 
 ## Tech stack
 
