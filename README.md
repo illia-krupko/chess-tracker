@@ -1,255 +1,189 @@
-# ChessTracker
+<div align="center">
 
-ChessTracker is a backend system for storing chess games, analysing positions and building player statistics. The project is split into independent Spring Boot microservices with an API Gateway planned as the public entry point.
+# ♟️ ChessTracker
+
+### A chess platform powered by Java, Stockfish, Kafka, and AI explanations.
+
+**Analyse your games. Discover your playing style. Build a chess profile backed by data and AI.**
+
+[![Java](https://img.shields.io/badge/Java-21-ED8B00?logo=openjdk&logoColor=white)](https://openjdk.org/)
+[![Spring Boot](https://img.shields.io/badge/Spring%20Boot-4.1.1-6DB33F?logo=springboot&logoColor=white)](https://spring.io/projects/spring-boot)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-17-4169E1?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
+[![Kafka](https://img.shields.io/badge/Apache%20Kafka-4.1.2-231F20?logo=apachekafka&logoColor=white)](https://kafka.apache.org/)
+[![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white)](https://www.docker.com/)
+
+[Architecture](#-architecture) · [Services](#-the-microservices) · [Security](#-security-model) · [Run locally](#-run-locally) · [Documentation](#-project-documentation)
+
+</div>
+
+---
+
+## ♟️ What is ChessTracker?
+
+ChessTracker is a chess analysis platform built around a complete player workflow: import and manage games, analyse positions with Stockfish, understand mistakes through AI-generated explanations, track performance statistics, and discover a personal chess identity through an AI-generated Chess Portrait. A dedicated web frontend will bring these capabilities together in one player-facing experience.
+
+The system is split into independent Spring Boot services. Each service has a clear domain, its own persistence boundary, and a defined way to communicate with the rest of the platform. HTTP handles request/response operations; Kafka connects work that can run asynchronously.
+
+> **Project scope:** ChessTracker brings together microservices, RSA-based authentication, event-driven processing, a persistent Stockfish/UCI integration, and Gemini-powered explanations in one coherent backend project.
+
+## ✨ Highlights
+
+- **Real chess calculation:** Stockfish performs engine analysis through UCI; the LLM is used for explanations rather than replacing chess logic.
+- **Asynchronous workflows:** Kafka separates analysis tasks from the initial game request.
+- **Player statistics:** track results, performance by situation, average accuracy, brilliant moves, and other metrics derived from games and engine analysis.
+- **Chess Portrait:** an AI-generated profile of a player’s style, with a concise description, a short style label such as *Attacking* or *Positional Defender*, and a comparison to a well-known player with a similar style.
+- **A dedicated web frontend:** a player-facing interface for games, analysis, performance dashboards, and the Chess Portrait.
+- **Domain-oriented services:** account management, game data, analysis, and statistics have separate responsibilities.
+- **Token-based security:** User Service signs RSA JWTs; the Gateway validates tokens and propagates trusted identity.
+- **Versioned persistence:** PostgreSQL and Liquibase provide relational storage and managed schema changes.
+- **Containerized dependencies:** local PostgreSQL and Kafka run through Docker Compose.
+
+## 🧭 Architecture
+
+```mermaid
+flowchart TB
+    Client[ChessTracker Web Frontend] --> Gateway[API Gateway<br/>routing · JWT verification]
+    Gateway --> Users[User Service]
+    Gateway --> Games[Game Service]
+    Gateway --> AnalysisAPI[Analysis Service]
+    Gateway --> Stats[Statistics Service]
+
+    Users <--> UserDB[(user_service_db)]
+    Games <--> GameDB[(game_service_db)]
+    AnalysisAPI <--> AnalysisDB[(analysis_service_db)]
+
+    Games -->|analysis command| Kafka[(Apache Kafka 4.1.2)]
+    Kafka --> Worker[Analysis Service worker]
+    Worker --> Stockfish[Stockfish 16 / UCI]
+    Worker --> Gemini[Gemini API]
+    Worker -->|analysis data / events| Kafka
+    Kafka --> Stats
+```
+
+The main flow is straightforward: the web frontend communicates with the backend through the Gateway; domain services manage accounts, games, analysis, and statistics; Kafka carries asynchronous work; Analysis Service combines Stockfish calculation with Gemini explanations; Statistics Service turns game and analysis data into performance metrics and a player profile.
+
+## 🧩 The microservices
+
+| Repository | Responsibility | Main technologies |
+|---|---|---|
+| [User Service](https://github.com/illia-krupko/chess-tracker-user-service) | Registration, login, profiles, account lifecycle, access JWTs | Spring Security, JOSE/JWT, PostgreSQL, Liquibase |
+| [Game Service](https://github.com/illia-krupko/chess-tracker-game-service) | Game-domain operations, PGN and chess data, persistence, analysis messaging | Spring Data JPA, PostgreSQL, Kafka, chesslib |
+| [Analysis Service](https://github.com/illia-krupko/chess-tracker-analysis-service) | Engine-backed analysis and natural-language explanations | Stockfish/UCI, Kafka, Gemini, PostgreSQL |
+| [Statistics Service](https://github.com/illia-krupko/chess-tracker-statistics-service) | Performance metrics, game-pattern statistics, and AI-generated Chess Portrait | Spring MVC, PostgreSQL, Kafka, Liquibase |
+| [API Gateway](https://github.com/illia-krupko/chess-tracker-api-gateway) | Routing, token verification, trusted identity propagation | Spring Cloud Gateway Server MVC, Spring Security |
+| [Infrastructure](https://github.com/illia-krupko/chess-tracker-infrastructure) | PostgreSQL, Kafka, Docker networks, persistent volumes | Docker Compose, PostgreSQL 17, Kafka 4.1.2 |
+
+Each repository has its own README with configuration details and service-specific instructions.
+
+## 📈 Player analytics and Chess Portrait
+
+ChessTracker is not limited to storing games or showing engine evaluations. Its player-facing value is in connecting individual games to a broader picture of how someone plays.
+
+### Performance statistics
+
+Statistics Service is responsible for player-level metrics such as:
+
+- Win, draw, and loss rates, including breakdowns by colour, opening, and other game situations.
+- Average accuracy and accuracy trends across games or time periods.
+- Brilliant-move counts and other engine-derived indicators.
+- Performance patterns that help players see where they perform well and where they struggle.
+- Historical progress and summaries built from game results and analysis data.
+
+Metrics should have explicit definitions and be calculated consistently from the available game and engine data. A metric is shown only when the underlying data supports it.
+
+### ♟️ Chess Portrait — a personal playing-style profile
+
+Chess Portrait is a signature ChessTracker feature: an AI-generated, readable description of how a player tends to play, based on their statistics and optionally a selection of games from different periods. It is designed to turn raw numbers into a coherent picture of a player’s chess identity.
+
+A Chess Portrait combines three elements:
+
+1. **Style summary:** a short description of the player’s recurring tendencies, strengths, and characteristic decisions.
+2. **Style label:** a concise category such as *Attacking Player*, *Positional Defender*, or another label supported by the observed play.
+3. **Player-style comparison:** a well-known chess player whose style most resembles the user’s, with an explanation of the similarities rather than just a name.
+
+The AI interprets evidence from statistics and selected games; it does not replace Stockfish’s calculation. The comparison is an illustrative similarity, not a claim that the player has the same strength or skill as a grandmaster.
+
+### 🖥️ Web experience
+
+A dedicated frontend connects the system into one product experience: game management, game analysis, performance dashboards, and the Chess Portrait. The backend services expose the domain capabilities; the frontend presents them in a clear, player-friendly way.
+
+## 🛠️ Technology stack
+
+| Area | Technologies |
+|---|---|
+| Language & runtime | Java 21 |
+| Application framework | Spring Boot 4.1.1, Spring Security |
+| Persistence | PostgreSQL 17, Spring Data JPA / Hibernate, Liquibase |
+| Messaging | Apache Kafka 4.1.2 in KRaft mode |
+| Chess analysis | Stockfish 16 through UCI |
+| AI explanations | Gemini API |
+| API ingress | Spring Cloud Gateway Server MVC, OAuth2 Resource Server / JWT |
+| Build & quality | Gradle, JUnit, Testcontainers, Checkstyle, MapStruct, Lombok, springdoc-openapi |
+| Runtime | Docker Compose, service-specific Docker networks |
+
+## 🔐 Security model
+
+1. User Service authenticates credentials and signs an access JWT with the RSA private key.
+2. The Gateway validates the token with the matching RSA public key.
+3. The Gateway derives the authenticated user ID from the verified token and sets `X-User-Id` on protected routes.
+4. Internal services validate `X-Gateway-Secret` and establish request-local authentication from the propagated identity.
+5. Domain services remain responsible for resource-level authorization, such as checking that a user owns the requested game or profile.
+
+Private signing keys, shared secrets, and API keys must remain outside version control. See [Security Architecture](docs/SECURITY.md) for the complete trust model.
+
+## 🚀 Run locally
+
+### Prerequisites
+
+- JDK 21
+- Docker Engine and Docker Compose v2
+- Git
+- A Gemini API key for AI-generated explanations
+
+### 1. Start the infrastructure
+
+```bash
+git clone https://github.com/illia-krupko/chess-tracker-infrastructure.git
+cd chess-tracker-infrastructure
+```
+
+Follow the infrastructure README to create the required external Docker networks and start PostgreSQL and Kafka.
+
+### 2. Clone the services
+
+Clone the repositories you want to run. Each service is an independent Gradle/Spring Boot application and documents its required environment variables, keys, database, Kafka, and port configuration.
+
+### 3. Build and run a service
+
+From the relevant service repository:
+
+```bash
+./gradlew clean build
+./gradlew bootRun
+```
+
+These commands launch an individual application. Align service ports and Gateway destination URIs with the chosen host/container setup. Never commit `.env` files, private keys, database passwords, or API keys.
+
+## 📚 Project documentation
+
+- [Architecture](docs/ARCHITECTURE.md)
+- [Security architecture](docs/SECURITY.md)
+- [Use cases](docs/USE-CASES.md)
+- [User Service README](https://github.com/illia-krupko/chess-tracker-user-service#readme)
+- [Game Service README](https://github.com/illia-krupko/chess-tracker-game-service#readme)
+- [Analysis Service README](https://github.com/illia-krupko/chess-tracker-analysis-service#readme)
+- [Statistics Service README](https://github.com/illia-krupko/chess-tracker-statistics-service#readme)
+- [API Gateway README](https://github.com/illia-krupko/chess-tracker-api-gateway#readme)
+- [Infrastructure README](https://github.com/illia-krupko/chess-tracker-infrastructure#readme)
 
 ## Project status
 
-The system is being developed incrementally. The current codebase already contains dedicated repositories for UserService, GameService, AnalysisService, StatisticsService and shared infrastructure. The API Gateway is part of the target architecture and is responsible for public ingress and JWT validation.
+ChessTracker is an actively developed chess platform. The architecture and feature descriptions explain the product direction; each service repository remains the source of truth for its currently available endpoints and configuration.
 
-## Repositories
+---
 
-| Component | Repository | Responsibility | Status |
-|---|---|---|---|
-| UserService | https://github.com/Krupkolllia/chess-tracker-user-service | Registration, login, user profile and account lifecycle | Active |
-| GameService | https://github.com/Krupkolllia/chess-tracker-game-service | Chess games, PGN/game lifecycle and game domain operations | Active |
-| AnalysisService | https://github.com/Krupkolllia/chess-tracker-analysis-service | Asynchronous chess analysis pipeline | In progress / planned capabilities |
-| StatisticsService | https://github.com/Krupkolllia/chess-tracker-statistics-service | Player statistics and derived profile data | In progress / planned capabilities |
-| Infrastructure | https://github.com/Krupkolllia/ChessTrackerInfrastructure | PostgreSQL and Kafka local infrastructure | Active |
-| API Gateway | https://github.com/Krupkolllia/chess-tracker-api-gateway | Public entry point, JWT validation and request routing | Planned |
+<div align="center">
 
-## Tech stack
+**Built with Java, Spring Boot, Kafka, and a love of chess.** ♟️
 
-### Application stack
-
-- Java 21
-- Spring Boot 4.1.1
-- Spring Security 7.1.1
-- Spring Security JOSE / Nimbus JOSE + JWT
-- Gradle
-- Spring Data JPA / Hibernate
-- PostgreSQL 17
-- Liquibase
-- Apache Kafka 4.1.2
-- Docker
-
-### Supporting libraries and tooling
-
-- MapStruct 1.6.3
-- Lombok
-- springdoc-openapi
-- Testcontainers
-- JUnit Platform
-- Checkstyle
-- `chesslib` 1.3.7 in GameService
-
-The repository build files currently confirm Java 21 and Spring Boot 4.1.1 across the services. UserService and GameService also include OpenAPI tooling; GameService uses `chesslib`, while the shared infrastructure repository runs PostgreSQL 17 and Apache Kafka 4.1.2.
-
-## Architecture at a glance
-
-```text
-                           Internet / Frontend
-                                  |
-                                  v
-                         +-------------------+
-                         |    API Gateway    |
-                         |-------------------|
-                         | Routing           |
-                         | JWT validation    |
-                         | User identity     |
-                         +---------+---------+
-                                   |
-                    +--------------+--------------+
-                    |              |              |
-                    v              v              v
-             +-------------+ +-------------+ +-------------+
-             | UserService | | GameService | |   Analysis  |
-             |-------------| |-------------| |   Service   |
-             | Auth        | | Games       | | Async jobs  |
-             | Users       | | PGN         | | Chess AI   |
-             +------+------+ +------+------+ +------+------+
-                    |               |                ^
-                    |               |                |
-                    v               |                |
-               +---------+          |         +------+------+
-               |Postgres |<---------+-------->|   Kafka     |
-               | DB per  |                    | event bus   |
-               | service  |                    +------+------+
-               +---------+                           |
-                                                      v
-                                               +-------------+
-                                               | Statistics  |
-                                               | Service     |
-                                               +-------------+
-```
-
-The database-per-service boundary is the target design: each service owns its data and exposes it through its API or events rather than sharing JPA entities across services.
-
-## Core design principles
-
-### 1. Gateway-first public API
-
-Clients should communicate with the platform through the API Gateway. Internal services are intended to remain private to the backend network rather than being publicly exposed.
-
-### 2. UserService issues JWTs
-
-UserService performs username/password authentication and signs access tokens with an RSA private key. The JWT contains the authenticated user identity, currently represented by `sub = userId`, plus `iat` and `exp` claims.
-
-### 3. Gateway validates JWTs
-
-The API Gateway is the JWT consumer. It stores the RSA public key and validates the access token before forwarding an authenticated request to an internal service.
-
-### 4. Internal services receive identity, not credentials
-
-After validating the token, the Gateway forwards the trusted user identity to an internal service through an internal header such as `X-User-Id`. The service reconstructs its request-local Spring Security `Authentication` and exposes the user identity through the `SecurityContext`.
-
-### 5. Synchronous vs asynchronous work
-
-User/profile operations and normal game CRUD operations are synchronous HTTP operations. Expensive analysis work is designed as an asynchronous Kafka-driven flow so a game request does not have to wait for engine/AI analysis to finish.
-
-## Main user flows
-
-### Registration
-
-```text
-Client
-  -> Gateway
-  -> POST /auth/register
-  -> UserService
-  -> validate DTO
-  -> create User
-  -> PostgreSQL
-  -> 201 Created
-```
-
-Registration is public from the **user authentication** perspective, but the UserService is still reachable only through the trusted backend path. No user id exists before the account is created.
-
-### Login
-
-```text
-Client
-  -> Gateway
-  -> POST /auth/login
-  -> UserService
-  -> AuthenticationManager
-  -> DaoAuthenticationProvider
-  -> UserDetailsService
-  -> PostgreSQL
-  -> JwtEncoder (RSA private key)
-  -> access token
-```
-
-### Authenticated request
-
-```text
-Client
-  -> Authorization: Bearer <JWT>
-  -> Gateway
-  -> JwtDecoder / public RSA key
-  -> JWT sub = userId
-  -> X-User-Id + internal gateway trust header
-  -> Internal service
-  -> GatewayAuthenticationFilter
-  -> SecurityContext
-  -> Controller / Service
-```
-
-### Game analysis
-
-```text
-Client
-  -> Gateway
-  -> GameService
-  -> persist game
-  -> publish analysis command/event
-  -> Kafka
-  -> AnalysisService
-  -> engine / AI analysis
-  -> publish result/event
-  -> consumers such as StatisticsService
-```
-
-## Security model
-
-The security architecture is documented in detail in [`docs/SECURITY.md`](docs/SECURITY.md).
-
-At a high level:
-
-- Access tokens are JWTs signed with RSA.
-- UserService owns the private signing key.
-- Gateway owns only the public verification key.
-- Internal services do not need the user's password.
-- `X-User-Id` is trusted only when the request came through the internal Gateway path.
-- The `SecurityContext` is request-scoped; it is not a persistent user store.
-- Access tokens are currently short-lived (30 minutes in the current design).
-- Refresh-token rotation/revocation and immediate access-token revocation are intentionally deferred until the basic architecture is stable.
-
-## Documentation
-
-- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — system architecture, service boundaries, data ownership and request flow.
-- [`docs/USE-CASES.md`](docs/USE-CASES.md) — concrete end-to-end use cases.
-- [`docs/SECURITY.md`](docs/SECURITY.md) — authentication, authorization, JWT and internal trust model.
-
-## Local infrastructure
-
-The infrastructure repository currently provides:
-
-- PostgreSQL 17
-- Apache Kafka 4.1.2
-- Docker volumes for persistent local data
-- a shared Docker network named `chesstracker`
-
-Infrastructure repository:
-
-https://github.com/Krupkolllia/ChessTrackerInfrastructure
-
-## Development notes
-
-Each service is an independent Gradle/Spring Boot application. This keeps service boundaries explicit and allows a service to be developed and tested independently.
-
-For local development, the intended split is:
-
-```text
-Infrastructure Docker
-  - PostgreSQL
-  - Kafka
-
-IDE / containers
-  - UserService
-  - GameService
-  - AnalysisService
-  - StatisticsService
-  - API Gateway (planned)
-```
-
-## Current scope vs future scope
-
-### Current / near-term
-
-- User registration and login
-- RSA-signed access JWTs
-- Request-local authentication propagation
-- User profile operations
-- Game service with PostgreSQL, Liquibase and Kafka integration
-- Shared PostgreSQL/Kafka infrastructure
-
-### Planned
-
-- API Gateway implementation as the single public ingress
-- AnalysisService implementation around Stockfish/AI analysis
-- StatisticsService event-driven aggregation and player profile generation
-- Refresh tokens
-- Token revocation strategy if the product requires immediate invalidation
-- Additional observability and deployment automation
-
-## Repository map
-
-```text
-ChessTracker
-|
-+-- chess-tracker-user-service
-+-- chess-tracker-game-service
-+-- chess-tracker-analysis-service
-+-- chess-tracker-statistics-service
-+-- ChessTrackerInfrastructure
-\-- API Gateway (planned)
-```
+</div>
